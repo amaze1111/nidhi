@@ -1,0 +1,4 @@
+SUPABASE_URL = "https://gtfyoxbaqjeqqwnrhrnm.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd0ZnlveGJhcWplcXF3bnJocm5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg5Njk1NzgsImV4cCI6MjA2NDU0NTU3OH0.66-Vix1jzi-B0hIvoJpcuuCdHWZokDVmT9wzYiYC6CE"
+
+from serpapi import GoogleSearch

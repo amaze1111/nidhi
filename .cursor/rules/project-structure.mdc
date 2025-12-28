@@ -1,0 +1,9 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+What is this project?
+This is a project about daily news application
+## how it works?
+It runs every day for a topic and collects information and searches the internet for the information in the last 24 hours and summarizes it
