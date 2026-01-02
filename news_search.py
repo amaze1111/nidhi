@@ -3,17 +3,17 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 import telegram
 import json
-import requests
+import re
 import requests
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     MessageHandler,
-    filters,
     ConversationHandler,
-    asyncio,
-    updater,
+    filters,
 )
+import asyncio
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, time
 import pytz
@@ -720,7 +720,7 @@ def run_telegram_bot():
         port=PORT,
         url_path=bot_token,
         webhook_url=f"https://{PUBLIC_DOMAIN}/{bot_token}",
-    
+    )
     print(f"📊 Current time: {datetime.now(ist_timezone).strftime('%Y-%m-%d %H:%M:%S IST')}")
     print("="*60)
     print("The bot is now running. Users can interact with it on Telegram.")
