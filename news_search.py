@@ -132,7 +132,7 @@ def generate_meal_plan(gemini_key, user_profile):
     try:
         # Configure Gemini
         genai.configure(api_key=gemini_key)
-        model = genai.GenerativeModel('gemini-3-4b')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         
         age = user_profile['age']
         weight = user_profile['weight']
@@ -414,7 +414,7 @@ def answer_food_query(gemini_key, query):
     """
     try:
         genai.configure(api_key=gemini_key)
-        model = genai.GenerativeModel('gemini-3-27b')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         
         prompt = f"""You are a helpful Indian food and nutrition expert assistant.
 
