@@ -728,7 +728,7 @@ def run_telegram_bot():
     print("📅 Daily meal plans will be sent automatically at 12:07 PM IST")
     print("🧪 Use /test_schedule to manually test the scheduled task")
     print("Press Ctrl+C to stop the bot.\n")
-    )
+    
    # updater.start_polling()
     #updater.idle()
     
