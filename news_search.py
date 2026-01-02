@@ -3,13 +3,16 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 import telegram
 import json
-import re
+import requests
+import requests
 from telegram.ext import (
-    Updater,
+    ApplicationBuilder,
     CommandHandler,
     MessageHandler,
-    Filters,
+    filters,
     ConversationHandler,
+    asyncio,
+    updater,
 )
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, time
@@ -35,9 +38,6 @@ def load_api_key():
     if not gemini_key:
         raise ValueError("Gemini_API_KEY not found in environment variables")
     return gemini_key
-
-
-
 
 
 def load_profiles_from_disk():
@@ -130,24 +130,16 @@ def generate_meal_plan(gemini_key, user_profile):
     with quantities and macros for each meal, tailored to user's profile.
     """
     try:
+        # Configure Gemini
+        genai.configure(api_key=gemini_key)
+        model = genai.GenerativeModel('gemini-3-4b')
+        
         age = user_profile['age']
         weight = user_profile['weight']
         height = user_profile['height']
         macros = user_profile['macros']
-
-        system_msg = {
-            "role": "system",
-            "content": "You are a nutrition-focused Indian meal planner. Provide clear, practical one-day meal plans (breakfast, lunch, dinner) with quantities and macros. Prefer simple home-cooked Indian dishes."
-        }
-
-        user_prompt = f"User Profile:\n- Age: {age} years\n- Weight: {weight} kg\n- Height: {height} cm\n\nDaily Macro Targets:\n- Calories: {macros['calories']} kcal\n- Protein: {macros['protein']} g\n- Carbohydrates: {macros['carbs']} g\n- Fats: {macros['fats']} g\n- Fibre: {macros['fibre']} g\n\nGoal: Plan meals for ONE day (breakfast, lunch, dinner). For each meal, provide dish name(s), approximate quantity for one adult, and rough macros per meal. Distribute macros across meals: breakfast ~25%, lunch ~40%, dinner ~35%. Avoid exotic ingredients and keep it practical."
-
-        try:
-            # Configure Gemini
-            genai.configure(api_key=gemini_key)
-            model = genai.GenerativeModel('gemini-3-flash-preview')
-
-            prompt = f"""
+        
+        prompt = f"""
 You are a nutrition-focused Indian meal planner.
 
 User Profile:
@@ -201,18 +193,15 @@ Protein: X g | Carbs: Y g | Fats: Z g | Fibre: W g | Calories: C kcal
 At the end, add a brief note about how well this plan matches the user's nutritional needs.
 """
 
-            response = model.generate_content(prompt)
-            return response.text
-        except Exception as e:
-            err_msg = str(e)
-            if "429" in err_msg or "quota" in err_msg.lower():
-                fallback = "Meal plan generation unavailable right now (Gemini quota exceeded). Please try again later."
-                print(fallback)
-                return fallback
-            print(f"Error during meal plan generation: {err_msg}")
-            return "Sorry, I could not generate a meal plan right now. Please try again later."
+        response = model.generate_content(prompt)
+        return response.text
     except Exception as e:
-        print(f"Error during meal plan generation: {e}")
+        err_msg = str(e)
+        if "429" in err_msg or "quota" in err_msg.lower():
+            fallback = "Meal plan generation unavailable right now (Gemini quota exceeded). Please try again later."
+            print(fallback)
+            return fallback
+        print(f"Error during meal plan generation: {err_msg}")
         return "Sorry, I could not generate a meal plan right now. Please try again later."
 
 
@@ -419,10 +408,14 @@ def handle_cancel(update, context):
 
 
 def answer_food_query(gemini_key, query):
+    """
+    Answer user's food-related questions using Gemini API
+    (recipes, nutrition info, cooking tips, etc.)
+    """
     try:
         genai.configure(api_key=gemini_key)
-        model = genai.GenerativeModel('gemini-3-flash-preview')
-
+        model = genai.GenerativeModel('gemini-3-27b')
+        
         prompt = f"""You are a helpful Indian food and nutrition expert assistant.
 
 A user has asked you this question related to food:
@@ -439,8 +432,6 @@ Use emojis where appropriate to make it engaging."""
         if "429" in err_msg or "quota" in err_msg.lower():
             return "Sorry, I'm temporarily unable to answer queries (API quota exceeded). Please try again later."
         return f"Sorry, I encountered an error processing your query. Please try again later."
-
-
 
 
 def _verify_url(url, timeout=5):
@@ -672,80 +663,64 @@ def send_daily_meal_plans():
         print(f"{'='*60}\n")
 
 def run_telegram_bot():
-    """Run the Telegram bot"""
     global bot_instance
-    
+
     load_dotenv()
     load_profiles_from_disk()
-    bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
-    
-    if not bot_token:
-        raise ValueError("TELEGRAM_BOT_TOKEN not found in environment variables")
-    
-    updater = Updater(bot_token, use_context=True)
-    dp = updater.dispatcher
-    
-    # Store bot instance globally for scheduled tasks
-    bot_instance = updater.bot
 
-    # Conversation handler for profile collection
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    if not bot_token:
+        raise ValueError("TELEGRAM_BOT_TOKEN not found")
+
+    PORT = int(os.environ.get("PORT", 8000))
+    PUBLIC_DOMAIN = os.environ["RAILWAY_PUBLIC_DOMAIN"]
+
+    application = ApplicationBuilder().token(bot_token).build()
+
+    # Store bot globally for scheduler
+    bot_instance = application.bot
+
+    # Conversation handler
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler("start", handle_start),
-            CommandHandler("profile", handle_profile)
+            CommandHandler("profile", handle_profile),
         ],
         states={
-            ASK_AGE: [
-                MessageHandler(Filters.text & ~Filters.command, handle_age)
-            ],
-            ASK_WEIGHT: [
-                MessageHandler(Filters.text & ~Filters.command, handle_weight)
-            ],
-            ASK_HEIGHT: [
-                MessageHandler(Filters.text & ~Filters.command, handle_height)
-            ],
+            ASK_AGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_age)],
+            ASK_WEIGHT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_weight)],
+            ASK_HEIGHT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_height)],
         },
         fallbacks=[CommandHandler("cancel", handle_cancel)],
     )
 
-    # Add command handlers
-    dp.add_handler(CommandHandler("plan", handle_plan))
-    dp.add_handler(CommandHandler("test_schedule", handle_test_schedule))  # For testing
-    dp.add_handler(conv_handler)
-    
-    # Add handler for general food/recipe queries (must be after conversation handler)
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_food_query))
+    application.add_handler(CommandHandler("plan", handle_plan))
+    application.add_handler(CommandHandler("test_schedule", handle_test_schedule))
+    application.add_handler(conv_handler)
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_food_query))
 
-    # Set up scheduler for daily meal plans at 12:07 PM IST
-    ist_timezone = pytz.timezone('Asia/Kolkata')
+    # Scheduler (unchanged)
+    ist_timezone = pytz.timezone("Asia/Kolkata")
     scheduler = BackgroundScheduler(timezone=ist_timezone)
-    
     scheduler.add_job(
         send_daily_meal_plans,
-        trigger='cron',
-        hour=20,   # 12 PM IST
-        minute=51,  # 12:07 PM IST
-        id='daily_meal_plans',
-        name='Send daily meal plans to all users',
-        replace_existing=True
+        trigger="cron",
+        hour=20,
+        minute=51,
+        id="daily_meal_plans",
+        replace_existing=True,
     )
-    
     scheduler.start()
+
+    print("🚀 Starting bot in WEBHOOK mode")
+
+    # 🔥 THIS IS THE FIX
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=bot_token,
+        webhook_url=f"https://{PUBLIC_DOMAIN}/{bot_token}",
     
-    # Log scheduler status
-    jobs = scheduler.get_jobs()
-    print("\n" + "="*60)
-    print("🤖 Starting Indian Meal Planner Bot...")
-    print("="*60)
-    print(f"✅ Bot instance created")
-    print(f"✅ Scheduler started with {len(jobs)} job(s)")
-    for job in jobs:
-        next_run = job.next_run_time
-        if next_run:
-            next_run_ist = next_run.astimezone(ist_timezone)
-            print(f"   📅 Next scheduled run: {next_run_ist.strftime('%Y-%m-%d %H:%M:%S IST')}")
-        else:
-            print(f"   ⚠️  Job '{job.name}' has no next run time")
     print(f"📊 Current time: {datetime.now(ist_timezone).strftime('%Y-%m-%d %H:%M:%S IST')}")
     print("="*60)
     print("The bot is now running. Users can interact with it on Telegram.")
@@ -753,12 +728,12 @@ def run_telegram_bot():
     print("📅 Daily meal plans will be sent automatically at 12:07 PM IST")
     print("🧪 Use /test_schedule to manually test the scheduled task")
     print("Press Ctrl+C to stop the bot.\n")
-    
-    updater.start_polling()
-    updater.idle()
+    )
+   # updater.start_polling()
+    #updater.idle()
     
     # Cleanup
-    scheduler.shutdown()
+    #scheduler.shutdown()
 
 
 def main():
